@@ -73,10 +73,13 @@ async def handle_message(message: Message):
     if result is not None:
         user_totals[user_id] = user_totals.get(user_id, 0) + result
         
-        # Форматируем для ответа
-        if result.is_integer():
+        # Проверяем: если число целое (например, 300000.0), 
+        # то выводим как целое без знаков после запятой
+        if result % 1 == 0:
+            # Форматируем с пробелом как разделителем тысяч: 300 000
             response = f"{int(result):,}".replace(',', ' ')
         else:
+            # Если всё же есть копейки (например, 12000.50), выводим с ними
             response = f"{result:,.2f}".replace(',', ' ').replace('.', ',')
             
         await message.answer(response)
