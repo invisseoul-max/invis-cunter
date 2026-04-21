@@ -1,3 +1,9 @@
+Понял тебя, это важный момент. Бот сейчас просто ищет цифры, не обращая внимания на статус операции. Чтобы он не считал «ошибочные» или «отмененные» чеки, нам нужно добавить проверку на «плохие» слова.
+
+Я добавил список ключевых слов (Отменён, Ошибка, Не удалось), при наличии которых бот не будет прибавлять сумму, а напишет твою фразу.
+
+Исправленный код:
+Python
 import re
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
@@ -11,11 +17,17 @@ dp = Dispatcher(bot)
 user_totals = {}
 
 def extract_amount(text):
-    text = text.lower()
+    text_lower = text.lower()
     
-    # 1. Ищем после "сумма:" до конца строки или до ближайшего слова
-    # 2. Ищем после "summasi:"
-    # 3. Ищем перед "сум"
+    # Список слов, при которых чек считать НЕЛЬЗЯ
+    bad_words = ['отменён', 'отменен', 'ошибка', 'не удалось', 'произошла ошибка']
+    
+    # Если в тексте есть хоть одно "плохое" слово — возвращаем специальный флаг
+    for word in bad_words:
+        if word in text_lower:
+            return "error_status"
+
+    # Регулярки для поиска суммы
     patterns = [
         r'сумма:\s*([\d\s,.]+)',
         r'summasi:\s*([\d\s,.]+)',
@@ -23,30 +35,20 @@ def extract_amount(text):
     ]
     
     for pattern in patterns:
-        match = re.search(pattern, text)
+        match = re.search(pattern, text_lower)
         if match:
             amount_str = match.group(1).strip()
-            
-            # Убираем всё лишнее, кроме цифр, точек и запятых
-            # Это удалит перенос строки, если сумма была в конце заголовка
             amount_str = re.split(r'[^\d\s,.]', amount_str)[0].strip()
-            
-            # Очистка от всех видов пробелов
             amount_str = re.sub(r'\s+', '', amount_str)
-            # Убираем точку в конце (пунктуация)
             amount_str = amount_str.rstrip('.')
 
-            # Исправляем логику разделителей для узбекских чеков
             if ',' in amount_str and '.' in amount_str:
-                # Например: 26,000.00 -> удаляем запятую
                 amount_str = amount_str.replace(',', '')
             
-            # Если запятая одна (100,00), делаем её точкой для расчетов
             amount_str = amount_str.replace(',', '.')
 
             try:
-                val = float(amount_str)
-                return val
+                return float(amount_str)
             except ValueError:
                 continue
     return None
@@ -56,9 +58,7 @@ async def total(message: Message):
     user_id = message.from_user.id
     total_sum = user_totals.get(user_id, 0)
     
-    # Форматируем итог с пробелом в тысячах
     formatted_total = f"{total_sum:,.2f}".replace(',', ' ').replace('.', ',')
-    
     await message.answer(f"📊 Итого: {formatted_total}\nСчетчик сброшен.")
     user_totals[user_id] = 0
 
@@ -68,20 +68,25 @@ async def handle_message(message: Message):
         return
 
     user_id = message.from_user.id
-    amount = extract_amount(message.text)
+    result = extract_amount(message.text)
     
-    if amount is not None:
-        # Плюсуем
-        user_totals[user_id] = user_totals.get(user_id, 0) + amount
+    # Если статус чека плохой
+    if result == "error_status":
+        await message.answer("Не удалось извлечь сумму")
+        return
+
+    # Если сумма найдена
+    if result is not None:
+        user_totals[user_id] = user_totals.get(user_id, 0) + result
         
-        # Бот отвечает ТОЛЬКО числом (без копеек, если сумма целая)
-        if amount.is_integer():
-            response = f"{int(amount):,}".replace(',', ' ')
+        # Форматируем для ответа
+        if result.is_integer():
+            response = f"{int(result):,}".replace(',', ' ')
         else:
-            response = f"{amount:,.2f}".replace(',', ' ').replace('.', ',')
+            response = f"{result:,.2f}".replace(',', ' ').replace('.', ',')
             
         await message.answer(response)
 
 if __name__ == "__main__":
-    print("Бот запущен. Теперь видит чеки с 'Сумма:'")
+    print("Бот запущен. Фильтрация ошибок включена.")
     executor.start_polling(dp, skip_updates=True)
