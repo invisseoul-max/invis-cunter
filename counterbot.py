@@ -1,49 +1,31 @@
-import asyncio
 import re
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message
-
-# Твой токен от BotFather
+from aiogram.utils import executor
 TOKEN = "8606148076:AAFfNfFKAjq2YO6troH0Y70XxSWpI_O0Grk"
 bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-# Глобальная переменная для хранения суммы (в идеале использовать БД)
-total_sum = 0.0
-
-@dp.message(F.text)
-async def handle_receipt(message: Message):
-    global total_sum
-    
-    # Ищем строку вида "18 000,00 сум" или "18000 сум"
-    # Регулярка ищет цифры, пробелы внутри числа и запятую
-    match = re.search(r'([\d\s,]+)\s*сум', message.text)
-    
+dp = Dispatcher(bot)
+user_totals = {}
+def extract_amount(text):
+    match = re.search(r'([\d\s,\.]+)\s*сум', text.lower())
     if match:
-        # Извлекаем строку с числом
-        amount_str = match.group(1).strip()
-        
-        try:
-            # Очищаем строку: убираем пробелы и меняем запятую на точку для float
-            clean_amount = amount_str.replace(' ', '').replace(',', '.')
-            amount = float(clean_amount)
-            
-            total_sum += amount
-            
-            await message.reply(
-                f"✅ Сумма принята: **{amount:,.2f} сум**\n"
-                f"📊 Всего в копилке: **{total_sum:,.2f} сум**"
-            )
-        except ValueError:
-            await message.reply("❌ Не удалось распознать формат суммы.")
-    else:
-        # Если это просто сообщение без суммы, игнорируем или даем подсказку
-        pass
-
-async def main():
-    print("Бот запущен...")
-    await dp.start_polling(bot)
-
+        amount = match.group(1)
+        amount = amount.replace(" ", "").replace(",", "")
+        return float(amount)
+    return None
+@dp.message_handler()
+async def handle_message(message: Message):
+    user_id = message.from_user.id
+    amount = extract_amount(message.text)
+    if amount:
+        user_totals[user_id] = user_totals.get(user_id, 0) + amount
+        await message.reply(f"Добавлено: {int(amount)} сум\nТекущий баланс: {int(user_totals[user_id])} сум")
+@dp.message_handler(commands=['total'])
+async def total(message: Message):
+    user_id = message.from_user.id
+    total_sum = user_totals.get(user_id, 0)
+    await message.reply(f"Общая сумма: {int(total_sum)} сум")
+    user_totals[user_id] = 0
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    from aiogram import executor
+    executor.start_polling(dp, skip_updates=True)
