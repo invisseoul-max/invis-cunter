@@ -29,3 +29,6 @@ async def total(message: Message):
 if __name__ == "__main__":
     from aiogram import executor
     executor.start_polling(dp, skip_updates=True)
+    @dp.message_handler()
+async def test(message: Message):
+    await message.reply("Я жив")
